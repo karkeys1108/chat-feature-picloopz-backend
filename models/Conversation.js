@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const ConversationSchema = new mongoose.Schema({
   participants: [{ type: String }], // [userId, 'admin']
   userId: { type: String, required: true, unique: true }, // 1-to-1 with Admin
+  roomId: { type: String, unique: true }, // Unique UUID for the room
   lastMessage: {
     content: String,
     type: { type: String, enum: ['text', 'image', 'file', 'audio', 'video'], default: 'text' },
