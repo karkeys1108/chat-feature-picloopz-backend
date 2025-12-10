@@ -1,0 +1,138 @@
+# Chat Feature Backend - cURL Examples
+# Base URL: http://localhost:4000
+# Replace localhost:4000 with your server URL if different
+
+# ============================================
+# GATEWAY ROUTE (Crypto Encryption)
+# ============================================
+
+# 1. Get Gateway Info
+curl -X GET http://localhost:4000/gateway
+
+# 2. Encrypt Data
+curl -X POST http://localhost:4000/gateway \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "encrypt",
+    "data": {
+      "message": "Hello, this is a secret message",
+      "userId": "user123",
+      "timestamp": "2024-01-01T00:00:00Z"
+    }
+  }'
+
+# 3. Decrypt Data
+# Replace ENCRYPTED_DATA with the encrypted string from the encrypt response
+curl -X POST http://localhost:4000/gateway \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "decrypt",
+    "encryptedData": "ENCRYPTED_DATA_HERE"
+  }'
+
+# 4. Process Encrypted Message (saves to database)
+curl -X POST http://localhost:4000/gateway \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "process",
+    "encryptedData": "ENCRYPTED_DATA_HERE"
+  }'
+
+# 5. Encrypt with Encrypted Response
+curl -X POST http://localhost:4000/gateway \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "encrypt",
+    "data": {
+      "message": "Secret message",
+      "userId": "user123"
+    },
+    "encryptResponse": true
+  }'
+
+# ============================================
+# CHAT API ENDPOINTS
+# ============================================
+
+# 6. Upload Media File
+curl -X POST http://localhost:4000/api/chat/upload \
+  -F "file=@/path/to/your/file.jpg"
+
+# 7. Get All Conversations (Admin Sidebar)
+curl -X GET http://localhost:4000/api/chat/conversations
+
+# 8. Get Chat History for User
+curl -X GET http://localhost:4000/api/chat/history/USER_ID_HERE
+
+# 9. Mark Messages as Read
+curl -X POST http://localhost:4000/api/chat/read/USER_ID_HERE
+
+# ============================================
+# EXAMPLE WORKFLOW: Encrypt and Process Message
+# ============================================
+
+# Step 1: Encrypt a message
+ENCRYPTED=$(curl -s -X POST http://localhost:4000/gateway \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "encrypt",
+    "data": {
+      "type": "message",
+      "senderId": "user123",
+      "receiverId": "admin",
+      "content": "Hello admin, I need help!",
+      "type": "text"
+    }
+  }' | grep -o '"encryptedData":"[^"]*' | cut -d'"' -f4)
+
+echo "Encrypted data: $ENCRYPTED"
+
+# Step 2: Process the encrypted message (saves to database)
+curl -X POST http://localhost:4000/gateway \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"action\": \"process\",
+    \"encryptedData\": \"$ENCRYPTED\"
+  }"
+
+# ============================================
+# WITH AUTHENTICATION (if JWT is required)
+# ============================================
+
+# Replace YOUR_JWT_TOKEN with actual JWT token
+# JWT_TOKEN="YOUR_JWT_TOKEN"
+
+# curl -X GET http://localhost:4000/api/chat/conversations \
+#   -H "Authorization: Bearer $JWT_TOKEN"
+
+# ============================================
+# TESTING EXAMPLES
+# ============================================
+
+# Test encryption/decryption cycle
+echo "Testing encryption/decryption..."
+
+# Encrypt
+RESPONSE=$(curl -s -X POST http://localhost:4000/gateway \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "encrypt",
+    "data": {
+      "test": "This is a test message",
+      "number": 12345
+    }
+  }')
+
+echo "Encrypt Response: $RESPONSE"
+
+# Extract encrypted data (using jq if available, or manual parsing)
+# ENCRYPTED=$(echo $RESPONSE | jq -r '.encryptedData')
+
+# Decrypt
+# curl -X POST http://localhost:4000/gateway \
+#   -H "Content-Type: application/json" \
+#   -d "{
+#     \"action\": \"decrypt\",
+#     \"encryptedData\": \"$ENCRYPTED\"
+#   }"
+

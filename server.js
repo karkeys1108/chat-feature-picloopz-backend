@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 const cloudinary = require('./utils/cloudinary');
 const upload = require('./middleware/upload');
+const { encrypt, decrypt, encryptObject, decryptObject } = require('./utils/crypto');
 
 // Models
 const ChatUser = require('./models/ChatUser');
@@ -98,6 +99,161 @@ app.post('/api/chat/read/:userId', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// 5. Gateway Route with Crypto Encryption
+app.post('/gateway', async (req, res) => {
+  try {
+    const { action, data, encryptedData } = req.body;
+
+    // If encryptedData is provided, decrypt it first
+    let decryptedData = null;
+    if (encryptedData) {
+      try {
+        decryptedData = decryptObject(encryptedData);
+      } catch (e) {
+        return res.status(400).json({ 
+          error: 'Invalid encrypted data', 
+          details: e.message 
+        });
+      }
+    }
+
+    // Process based on action
+    let result = null;
+    
+    switch (action) {
+      case 'encrypt':
+        // Encrypt the provided data
+        if (!data) {
+          return res.status(400).json({ error: 'Data is required for encryption' });
+        }
+        const encrypted = encryptObject(data);
+        result = { 
+          success: true, 
+          encryptedData: encrypted,
+          message: 'Data encrypted successfully'
+        };
+        break;
+
+      case 'decrypt':
+        // Decrypt the provided encrypted data
+        if (!encryptedData && !data) {
+          return res.status(400).json({ error: 'Encrypted data is required for decryption' });
+        }
+        const dataToDecrypt = encryptedData || data;
+        try {
+          const decrypted = decryptObject(dataToDecrypt);
+          result = { 
+            success: true, 
+            decryptedData: decrypted,
+            message: 'Data decrypted successfully'
+          };
+        } catch (e) {
+          return res.status(400).json({ 
+            error: 'Decryption failed', 
+            details: e.message 
+          });
+        }
+        break;
+
+      case 'process':
+        // Process decrypted data (example: save to database, etc.)
+        if (!decryptedData && !data) {
+          return res.status(400).json({ error: 'Data is required for processing' });
+        }
+        const processData = decryptedData || data;
+        
+        // Example: Save encrypted message
+        if (processData.type === 'message' && processData.content) {
+          const { senderId, receiverId, content, type, fileUrl } = processData;
+          
+          const newMessage = await Message.create({
+            senderId: senderId || 'user',
+            receiverId: receiverId || 'admin',
+            content,
+            type: type || 'text',
+            fileUrl,
+            clientId: processData.clientId
+          });
+
+          // Update conversation
+          const targetUserId = (senderId || 'user') === 'admin' ? receiverId : senderId;
+          await Conversation.findOneAndUpdate(
+            { userId: targetUserId },
+            {
+              $set: {
+                userId: targetUserId,
+                participants: [targetUserId, 'admin'],
+                lastMessage: { 
+                  content: (type || 'text') === 'text' ? content : 'Attachment', 
+                  type: type || 'text', 
+                  createdAt: new Date() 
+                },
+                updatedAt: new Date()
+              },
+              $inc: (senderId || 'user') === 'admin' ? {} : { unreadCount: 1 }
+            },
+            { upsert: true, new: true }
+          );
+
+          result = { 
+            success: true, 
+            message: 'Message processed and saved successfully',
+            messageId: newMessage._id
+          };
+        } else {
+          result = { 
+            success: true, 
+            message: 'Data processed successfully',
+            processedData: processData
+          };
+        }
+        break;
+
+      default:
+        return res.status(400).json({ 
+          error: 'Invalid action', 
+          supportedActions: ['encrypt', 'decrypt', 'process'] 
+        });
+    }
+
+    // Optionally encrypt the response
+    const { encryptResponse } = req.body;
+    if (encryptResponse) {
+      const encryptedResponse = encryptObject(result);
+      return res.json({ encryptedResponse });
+    }
+
+    res.json(result);
+  } catch (e) {
+    console.error('Gateway error:', e);
+    res.status(500).json({ error: 'Gateway processing error', details: e.message });
+  }
+});
+
+// Gateway GET route for health check or info
+app.get('/gateway', (req, res) => {
+  res.json({
+    status: 'active',
+    endpoint: '/gateway',
+    supportedActions: ['encrypt', 'decrypt', 'process'],
+    description: 'Gateway endpoint with crypto encryption support',
+    usage: {
+      encrypt: {
+        method: 'POST',
+        body: { action: 'encrypt', data: { /* your data */ } }
+      },
+      decrypt: {
+        method: 'POST',
+        body: { action: 'decrypt', encryptedData: 'iv:tag:encrypted' }
+      },
+      process: {
+        method: 'POST',
+        body: { action: 'process', encryptedData: 'iv:tag:encrypted' }
+      }
+    }
+  });
 });
 
 // --- Socket.IO Logic ---
