@@ -210,6 +210,52 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 4. Delete Message
+  socket.on('delete_message', async ({ messageId, userId }) => {
+    try {
+      // Find message
+      const msg = await Message.findById(messageId);
+      if (!msg) return;
+
+      // Check ownership (or if admin)
+      // Allow if senderId matches or if requester is admin
+      if (msg.senderId !== userId && socket.role !== 'admin') {
+        // You might want to allow admin to delete any message
+        // But if socket.userId is not set correctly for admin? 
+        // Admin socket role is 'admin'.
+        // If the user trying to delete is the sender, allow it.
+        return;
+      }
+
+      // Soft delete
+      msg.isDeleted = true;
+      await msg.save();
+
+      // Emit to everyone involved
+      // Notify sender room
+      io.to(`room_${msg.senderId}`).emit('message_deleted', { messageId, conversationId: msg.conversationId });
+      // Notify receiver room
+      if (msg.receiverId === 'admin') {
+        io.to('admin_room').emit('message_deleted', { messageId, conversationId: msg.conversationId });
+      } else {
+        io.to(`room_${msg.receiverId}`).emit('message_deleted', { messageId, conversationId: msg.conversationId });
+      }
+
+      // Also if admin deleted a user message, we need to ensure both sides get it.
+      if (msg.receiverId !== 'admin') {
+        // If receiver is user, notify admin too (sender was admin)
+        io.to('admin_room').emit('message_deleted', { messageId, conversationId: msg.conversationId });
+      }
+      if (msg.senderId !== 'admin') {
+        // If sender was user, we already notified room_senderId. 
+        // If receiver was admin, we notified admin_room.
+      }
+
+    } catch (e) {
+      console.error('Delete message error:', e);
+    }
+  });
+
   socket.on('disconnect', async () => {
     if (socket.userId) {
       console.log(`User disconnected: ${socket.userId}`);

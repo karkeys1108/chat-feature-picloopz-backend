@@ -8,6 +8,7 @@ const MessageSchema = new mongoose.Schema({
   type: { type: String, enum: ['text', 'image', 'file', 'audio', 'video', 'system'], default: 'text' },
   fileUrl: { type: String }, // Cloudinary URL
   isRead: { type: Boolean, default: false },
+  isDeleted: { type: Boolean, default: false },
   clientId: { type: String }, // For deduplication
 }, { timestamps: true });
 
