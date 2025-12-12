@@ -3,10 +3,10 @@ const crypto = require('crypto');
 // --- Configuration --- //
 const ALGORITHM = 'aes-256-gcm';
 // Keys should be in .env. 
-// For demo purposes, we fallback to random if not present, BUT this will break persistence across restarts if not fixed.
+// We use a deterministic fallback so restarts don't lose access to data if env is missing.
 const ENCRYPTION_KEY = process.env.CHAT_ENCRYPTION_KEY
     ? Buffer.from(process.env.CHAT_ENCRYPTION_KEY, 'hex')
-    : crypto.randomBytes(32);
+    : crypto.createHash('sha256').update('default_insecure_fallback_key_DO_NOT_USE_IN_PROD').digest();
 
 const HMAC_SECRET = process.env.CHAT_HMAC_SECRET || 'your_fallback_hmac_secret_change_me';
 const IV_LENGTH = 16; // For AES, usually 12 for GCM but can use 16. GCM standard is often 12. Let's use 12 for GCM.
@@ -98,9 +98,12 @@ function verifyRoomToken(token) {
 
         const data = JSON.parse(payloadStr);
 
-        // Check expiry (e.g. 5 minutes)
-        const fiveMinutes = 5 * 60 * 1000;
-        if (Date.now() - data.ts > fiveMinutes) return null; // Expired
+        // Check expiry (e.g. 24 hours for dev stability)
+        const expiryDuration = 24 * 60 * 60 * 1000;
+        if (Date.now() - data.ts > expiryDuration) {
+            console.log('[Token Expired] Token timestamp:', new Date(data.ts).toISOString(), 'Now:', new Date().toISOString());
+            return null;
+        }
 
         return data;
     } catch (e) {

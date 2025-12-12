@@ -1,4 +1,5 @@
 require('dotenv').config();
+console.log('Environment Loaded. GATEWAY:', process.env.ENABLE_GATEWAY_ENCRYPTION);
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -66,13 +67,23 @@ app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
     // Validate mime type/size logic handled by multer middleware usually, 
     // but we can add extra checks here if needed.
 
-    // Upload to Cloudinary
+    // Upload to Cloudinary (Authenticated)
     const result = await cloudinary.uploader.upload(req.file.path, {
       resource_type: 'auto',
-      folder: 'picloopz_chat'
+      folder: 'picloopz_chat',
+      type: 'authenticated'
     });
 
-    res.json({ url: result.secure_url, type: result.resource_type });
+    // Generate Signed URL
+    const signedUrl = cloudinary.url(result.public_id, {
+      resource_type: result.resource_type,
+      type: 'authenticated',
+      sign_url: true,
+      secure: true,
+      version: result.version // explicit version often helps with caching
+    });
+
+    res.json({ url: signedUrl, type: result.resource_type });
   } catch (e) {
     console.error('Upload error:', e);
     res.status(500).json({ error: e.message });
@@ -143,21 +154,34 @@ app.post('/api/chat/read/:userId', async (req, res) => {
 });
 
 // --- Socket.IO Middleware ---
+
+// ...
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error('Authentication required'));
 
   const decoded = verifyRoomToken(token);
-  if (!decoded) return next(new Error('Invalid or expired token'));
+  if (!decoded) {
+    console.log('[Auth Failure] Token verification failed:', token);
+    return next(new Error('Invalid or expired token'));
+  }
 
   socket.user = decoded; // { uid, role, ts }
   next();
 });
 
+const { attachGateway, attachServerGateway } = require('./gateway/chatGateway');
+
+// --- Gateway Init ---
+attachServerGateway(io);
+
 // --- Socket.IO Logic ---
 io.on('connection', async (socket) => {
   const { uid, role } = socket.user;
   console.log(`Socket connected: ${uid} (${role})`);
+
+  // Attach Encryption Gateway
+  attachGateway(socket);
 
   // Room Assignment
   if (role === 'admin') {
@@ -247,6 +271,8 @@ io.on('connection', async (socket) => {
         fileUrl: data.fileUrl,
         clientId: data.clientId
       });
+
+      console.log(`[SECURE] Message saved. Encrypted content in DB: ${encryptedContent.substring(0, 30)}...`);
 
       // Prepare Decrypted Message for Emitting
       const emittedMessage = {
