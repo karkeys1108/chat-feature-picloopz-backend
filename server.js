@@ -10,6 +10,9 @@ const upload = require('./middleware/upload');
 const { encryptMessage, decryptMessage, generateRoomToken, verifyRoomToken } = require('./utils/security');
 const { randomUUID } = require('crypto');
 
+// Gateway Middleware
+const { attachGateway, attachServerGateway, expressMiddleware } = require('./gateway/chatGateway');
+
 // Models
 const ChatUser = require('./models/ChatUser');
 const Conversation = require('./models/Conversation');
@@ -49,6 +52,7 @@ function checkRateLimit(socketId) {
 }
 
 // --- REST APIs ---
+app.use('/api/chat', expressMiddleware);
 
 // 0. Get Auth Token (Client calls this first)
 app.post('/api/chat/token', (req, res) => {
@@ -169,8 +173,6 @@ io.use(async (socket, next) => {
   socket.user = decoded; // { uid, role, ts }
   next();
 });
-
-const { attachGateway, attachServerGateway } = require('./gateway/chatGateway');
 
 // --- Gateway Init ---
 attachServerGateway(io);
