@@ -35,28 +35,58 @@ function encryptMessage(text) {
  * Decrypts text using AES-256-GCM
  * Expects format: iv:authTag:encryptedContent
  */
+/**
+ * Decrypts text using AES-256-GCM
+ * Expects format: iv:authTag:encryptedContent
+ */
 function decryptMessage(text) {
-    if (!text || !text.includes(':')) return text; // Return as is if not encrypted format
+    if (!text || typeof text !== 'string' || !text.includes(':')) return text;
 
-    try {
-        const parts = text.split(':');
-        if (parts.length !== 3) return text; // Malformed
+    // Strict Validation to avoid treating "Time: 12:00" as encrypted
+    const parts = text.split(':');
+    if (parts.length !== 3) return text;
 
-        const iv = Buffer.from(parts[0], 'hex');
-        const authTag = Buffer.from(parts[1], 'hex');
-        const encryptedText = parts[2];
-
-        const decipher = crypto.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
-        decipher.setAuthTag(authTag);
-
-        let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-
-        return decrypted;
-    } catch (err) {
-        console.error('Decryption failed:', err.message);
-        return '[Decryption Failed]';
+    // IV (12 bytes) = 24 hex chars
+    // AuthTag (16 bytes) = 32 hex chars
+    if (parts[0].length !== 24 || parts[1].length !== 32) {
+        // Not a valid encrypted string format, assume plain text
+        return text;
     }
+
+    // Helper to attempt decryption with a specific key
+    const tryDecrypt = (key, keyName) => {
+        try {
+            const iv = Buffer.from(parts[0], 'hex');
+            const authTag = Buffer.from(parts[1], 'hex');
+            const encryptedText = parts[2];
+
+            const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+            decipher.setAuthTag(authTag);
+
+            let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+            decrypted += decipher.final('utf8');
+
+            return decrypted;
+        } catch (err) {
+            // console.debug(`[Security] Decryption failed with ${keyName}: ${err.message}`);
+            return null;
+        }
+    };
+
+    // 1. Try Primary Key
+    let result = tryDecrypt(ENCRYPTION_KEY, 'Primary');
+    if (result !== null) return result;
+
+    // 2. Try Fallback Key (handling legacy data during dev/migration)
+    const fallbackKey = crypto.createHash('sha256').update('default_insecure_fallback_key_DO_NOT_USE_IN_PROD').digest();
+    if (!ENCRYPTION_KEY.equals(fallbackKey)) {
+        result = tryDecrypt(fallbackKey, 'Fallback');
+        if (result !== null) return result;
+    }
+
+    // If both failed, it's likely a true decryption failure (wrong key or corrupted)
+    console.error(`[Security] Decryption failed for message: ${text.substring(0, 20)}...`);
+    return '[Decryption Failed]';
 }
 
 /**

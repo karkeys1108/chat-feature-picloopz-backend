@@ -387,6 +387,21 @@ io.on('connection', async (socket) => {
   });
 });
 
+// --- Health Check & Keep-Alive ---
+app.get('/health', (req, res) => res.send('OK'));
+
+// Self-ping to keep Render free tier awake (every 14 mins)
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || 'https://chat-feature-picloopz-backend.onrender.com'; // Update with actual Render URL if different
+if (process.env.NODE_ENV === 'production') {
+  setInterval(() => {
+    http.get(`${RENDER_EXTERNAL_URL}/health`, (resp) => {
+      console.log(`[Keep-Alive] Ping sent. Status: ${resp.statusCode}`);
+    }).on('error', (err) => {
+      console.error('[Keep-Alive] Ping failed:', err.message);
+    });
+  }, 14 * 60 * 1000); // 14 minutes
+}
+
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`Chat Backend running on port ${PORT}`));
 
