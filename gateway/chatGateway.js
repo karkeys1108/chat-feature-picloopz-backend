@@ -1,6 +1,6 @@
 const { encryptMessage, decryptMessage } = require('../utils/crypto');
 
-const ENABLE_GATEWAY_ENCRYPTION = process.env.ENABLE_GATEWAY_ENCRYPTION === 'true';
+const ENABLE_GATEWAY_ENCRYPTION = process.env.ENABLE_GATEWAY_ENCRYPTION === 'true' || true;
 console.log(`[Gateway] Loaded. Encryption Enabled: ${ENABLE_GATEWAY_ENCRYPTION}`);
 // Default key for demo if missing (32 bytes hex)
 const SECRET_KEY = process.env.SECRET_KEY || '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
@@ -158,9 +158,35 @@ function attachServerGateway(io) {
     });
 }
 
+/**
+ * Express Middleware for HTTP Routes
+ */
+function expressMiddleware(req, res, next) {
+    if (!ENABLE_GATEWAY_ENCRYPTION) return next();
+
+    // 1. Decrypt Request Body
+    if (req.body && req.body.encrypted && req.body.content) {
+        const decrypted = decryptInbound(req.body);
+        if (decrypted) {
+            req.body = decrypted;
+        }
+    }
+
+    // 2. Encrypt Response JSON
+    const originalJson = res.json;
+    res.json = function (data) {
+        // Encrypt data before sending
+        const encrypted = encryptOutbound(data);
+        return originalJson.call(this, encrypted);
+    };
+
+    next();
+}
+
 module.exports = {
     attachGateway,
     attachServerGateway,
     encryptOutbound,
-    decryptInbound
+    decryptInbound,
+    expressMiddleware
 };
